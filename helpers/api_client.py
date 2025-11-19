@@ -1,5 +1,8 @@
 # helpers/api_client.py
 import requests
+import sys
+import os
+sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 from data.test_data import *
 
 

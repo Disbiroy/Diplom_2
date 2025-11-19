@@ -35,3 +35,10 @@ INVALID_USER_MISSING_PASSWORD = {
     "password": None,
     "name": "Test User"
 }
+
+# Данные для обновления пользователя
+UPDATED_USER_DATA = {
+    "email": "updated_user@example.com",
+    "name": "Updated Name",
+    "password": "newpassword123"
+}

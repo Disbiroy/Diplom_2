@@ -1,6 +1,9 @@
 import pytest
 from unittest.mock import Mock, patch
 import requests
+import sys
+import os
+sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 
 
 @pytest.fixture(autouse=True)
@@ -94,6 +97,58 @@ def mock_requests():
         "message": "Internal Server Error"
     }
 
+    # Мок для успешного обновления пользователя
+    update_success_response = Mock()
+    update_success_response.status_code = 200
+    update_success_response.json.return_value = {
+        "success": True,
+        "user": {
+            "email": "updated_user@example.com",
+            "name": "Updated Name"
+        }
+    }
+
+    # Мок для ошибки обновления с существующим email
+    update_email_exists_response = Mock()
+    update_email_exists_response.status_code = 403
+    update_email_exists_response.json.return_value = {
+        "success": False,
+        "message": "User with such email already exists"
+    }
+
+    # Мок для получения заказов пользователя
+    orders_success_response = Mock()
+    orders_success_response.status_code = 200
+    orders_success_response.json.return_value = {
+        "success": True,
+        "orders": []
+    }
+
+    # Мок для получения заказов с созданным заказом
+    orders_with_data_response = Mock()
+    orders_with_data_response.status_code = 200
+    orders_with_data_response.json.return_value = {
+        "success": True,
+        "orders": [
+            {
+                "number": 12345,
+                "ingredients": ["ingredient_1", "ingredient_2"],
+                "status": "done",
+                "name": "Бургер",
+                "createdAt": "2024-01-01T00:00:00.000Z",
+                "updatedAt": "2024-01-01T00:00:00.000Z"
+            }
+        ]
+    }
+
+    # Мок для ошибки получения заказов без авторизации
+    orders_auth_error_response = Mock()
+    orders_auth_error_response.status_code = 401
+    orders_auth_error_response.json.return_value = {
+        "success": False,
+        "message": "You should be authorised"
+    }
+
     # Создаем словарь для хранения моков
     mock_responses = {
         'register_success': success_response,
@@ -106,15 +161,25 @@ def mock_requests():
         'order_auth_error': order_auth_error_response,
         'order_no_ingredients': order_no_ingredients_response,
         'delete_success': delete_success_response,
-        'invalid_hash': invalid_hash_response
+        'invalid_hash': invalid_hash_response,
+        'update_success': update_success_response,
+        'update_email_exists': update_email_exists_response,
+        'orders_success': orders_success_response,
+        'orders_with_data': orders_with_data_response,
+        'orders_auth_error': orders_auth_error_response
     }
 
     # Патчим requests.Session методы
     with patch('requests.Session.post') as mock_post, \
             patch('requests.Session.get') as mock_get, \
-            patch('requests.Session.delete') as mock_delete:
+            patch('requests.Session.delete') as mock_delete, \
+            patch('requests.Session.patch') as mock_patch:
+
+        # Переменная для отслеживания создания заказа
+        order_created = False
 
         def side_effect_post(url, **kwargs):
+            nonlocal order_created
             if 'register' in url:
                 data = kwargs.get('json', {})
                 if data.get('email') == 'existing_user@test.com':
@@ -140,12 +205,37 @@ def mock_requests():
                 elif data.get('ingredients') == ['invalid_hash_1', 'invalid_hash_2']:
                     return mock_responses['invalid_hash']
                 else:
+                    # Помечаем, что заказ создан
+                    order_created = True
                     return mock_responses['order_success']
             return mock_responses['register_success']
 
         def side_effect_get(url, **kwargs):
+            nonlocal order_created
             if 'ingredients' in url:
                 return mock_responses['ingredients']
+            elif 'orders' in url:
+                headers = kwargs.get('headers', {})
+                if not headers.get('Authorization'):
+                    return mock_responses['orders_auth_error']
+                # Если заказ был создан, возвращаем список с заказами
+                elif order_created:
+                    return mock_responses['orders_with_data']
+                else:
+                    return mock_responses['orders_success']
+            return mock_responses['register_success']
+
+        def side_effect_patch(url, **kwargs):
+            if 'user' in url:
+                data = kwargs.get('json', {})
+                headers = kwargs.get('headers', {})
+
+                if not headers.get('Authorization'):
+                    return mock_responses['orders_auth_error']  # Используем существующий мок для ошибки авторизации
+                elif data.get('email') == 'existing_user@test.com':
+                    return mock_responses['update_email_exists']
+                else:
+                    return mock_responses['update_success']
             return mock_responses['register_success']
 
         def side_effect_delete(url, **kwargs):
@@ -155,6 +245,7 @@ def mock_requests():
 
         mock_post.side_effect = side_effect_post
         mock_get.side_effect = side_effect_get
+        mock_patch.side_effect = side_effect_patch
         mock_delete.side_effect = side_effect_delete
 
         yield
