@@ -3,6 +3,7 @@ from unittest.mock import Mock, patch
 import requests
 import sys
 import os
+
 sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 
 
@@ -249,3 +250,47 @@ def mock_requests():
         mock_delete.side_effect = side_effect_delete
 
         yield
+
+
+@pytest.fixture
+def api_client():
+    """Базовая фикстура для API клиента"""
+    from helpers.api_client import StellarBurgersAPI
+    return StellarBurgersAPI()
+
+
+@pytest.fixture
+def authenticated_user(api_client):
+    """Фикстура для аутентифицированного пользователя"""
+    from data.test_data import VALID_USER
+    # Создаем пользователя
+    api_client.create_user(**VALID_USER)
+    # Логинимся
+    api_client.login_user(VALID_USER["email"], VALID_USER["password"])
+    yield api_client
+    # Удаляем пользователя после теста
+    try:
+        api_client.delete_user()
+    except:
+        pass
+
+
+@pytest.fixture
+def user_with_order(api_client):
+    """Фикстура для пользователя с созданным заказом"""
+    from data.test_data import VALID_USER
+    # Создаем и логиним пользователя
+    api_client.create_user(**VALID_USER)
+    api_client.login_user(VALID_USER["email"], VALID_USER["password"])
+
+    # Создаем заказ
+    ingredients_response = api_client.get_ingredients()
+    valid_ingredients = [ingredient["_id"] for ingredient in ingredients_response.json()["data"][:2]]
+    api_client.create_order(valid_ingredients)
+
+    yield api_client
+    # Удаляем пользователя после теста
+    try:
+        api_client.delete_user()
+    except:
+        pass
